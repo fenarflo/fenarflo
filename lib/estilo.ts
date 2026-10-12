@@ -11,8 +11,9 @@ export const TONOS = [
 ] as const;
 export type Tono = (typeof TONOS)[number]["id"];
 
+// `ass` must be the font file's family name (name ID 1): ffmpeg.wasm's libass matches nothing else.
 export const FUENTES = [
-  { id: "bricolage", label: "Bricolage", css: "var(--font-display)", ass: "Bricolage Grotesque", weight: 800 },
+  { id: "bricolage", label: "Bricolage", css: "var(--font-display)", ass: "Bricolage Grotesque ExtraBold", weight: 800 },
   { id: "dmsans", label: "DM Sans", css: "var(--font-sans)", ass: "DM Sans", weight: 700 },
   { id: "anton", label: "Anton", css: "var(--font-anton)", ass: "Anton", weight: 400 },
 ] as const;
@@ -25,7 +26,7 @@ export function fuente(id: FuenteId) {
 export type Estilo = {
   colorTexto: string;
   colorResaltado: string;
-  colorCaja: string;
+  colorContorno: string;
   fuente: FuenteId;
   mayusculas: boolean;
   tono: Tono;
@@ -38,7 +39,7 @@ export const MAX_EJEMPLO_CHARS = 200;
 export const ESTILO_DEFAULT: Estilo = {
   colorTexto: "#FFFFFF",
   colorResaltado: "#C6F432",
-  colorCaja: "#0E0E10",
+  colorContorno: "#0E0E10",
   fuente: "bricolage",
   mayusculas: true,
   tono: "cercano",

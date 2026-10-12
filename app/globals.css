@@ -171,3 +171,10 @@ body {
 .no-scrollbar {
   scrollbar-width: none;
 }
+
+/* Same monochrome emoji font used when burning captions, so the preview matches the export. */
+@font-face {
+  font-family: "Hookly Emoji";
+  src: url("/fonts/NotoEmoji-Medium.ttf") format("truetype");
+  font-display: swap;
+}

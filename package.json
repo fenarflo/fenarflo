@@ -6,12 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "vendor:ffmpeg": "node scripts/vendor-ffmpeg.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.133.0",
     "@ffmpeg/ffmpeg": "^0.12.15",
-    "@ffmpeg/util": "^0.12.2",
     "@upstash/ratelimit": "^2.2.0",
     "@upstash/redis": "^1.39.0",
     "motion": "^14.1.0",
