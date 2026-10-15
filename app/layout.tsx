@@ -21,9 +21,9 @@ const anton = Anton({
 });
 
 export const metadata: Metadata = {
-  title: "Hookly — hooks, guiones y subtítulos",
+  title: "Hookly — resume videos largos con narrador",
   description:
-    "Kit para creadores en español: hooks, guiones, captions y subtítulos animados para TikTok, Reels y Shorts.",
+    "Sube un video largo, una clase o un pódcast y Hookly saca lo más importante en un resumen narrado, shorts y apuntes. En español de México.",
   applicationName: "Hookly",
 };
 

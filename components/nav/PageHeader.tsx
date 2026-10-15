@@ -18,7 +18,7 @@ export function PageHeader({
         <div className="flex items-center gap-2">
           {aside}
           <Link
-            href="/precios"
+            href="/cuenta"
             className="inline-flex min-h-11 items-center rounded-full px-3 text-sm font-semibold text-muted hover:text-ink"
           >
             Planes

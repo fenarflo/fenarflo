@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence } from "motion/react";
 import Link from "next/link";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { emojisPorGrupo } from "@/lib/captions/emojis";
@@ -8,15 +8,14 @@ import { resolverEstilo } from "@/lib/captions/estilos";
 import { agrupar, formatoTiempo, reemplazarGrupo } from "@/lib/captions/group";
 import type { Grupo } from "@/lib/captions/types";
 import { estiloPersonalizado, useEstilo } from "@/lib/estilo";
-import { spring } from "@/lib/motion";
-import { usePlan } from "@/lib/plan";
+import { usePlan } from "@/lib/cuenta";
 import { MAX_DURACION_S, maxBytes, mb } from "@/lib/video/limits";
 import { sesion, useSesion } from "@/lib/video/sesion";
 import { useHydrated } from "@/lib/storage";
 import { PageHeader } from "@/components/nav/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { IconAlert, IconCaptions, IconDownload, IconRefresh, IconShare, IconUpload } from "@/components/ui/icons";
+import { IconCaptions, IconDownload, IconRefresh, IconShare, IconUpload } from "@/components/ui/icons";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Segmented } from "@/components/ui/Segmented";
 import { Switch } from "@/components/ui/Switch";
@@ -24,27 +23,7 @@ import { CaptionPreview, type PreviewHandle } from "./CaptionPreview";
 import { LineEditor } from "./LineEditor";
 import { StylePicker } from "./StylePicker";
 import { ExportProgress } from "./ExportProgress";
-
-function ErrorCard({ mensaje, onClose }: { mensaje: string; onClose?: () => void }) {
-  return (
-    <motion.div
-      role="alert"
-      initial={{ opacity: 0, y: -6 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0 }}
-      transition={spring}
-      className="mb-4 flex gap-2.5 rounded-2xl border border-danger/30 bg-danger/10 p-4 text-sm"
-    >
-      <IconAlert size={18} className="mt-0.5 shrink-0 text-danger" />
-      <p className="flex-1">{mensaje}</p>
-      {onClose && (
-        <button type="button" onClick={onClose} className="-my-2 min-h-11 px-2 font-semibold text-muted">
-          OK
-        </button>
-      )}
-    </motion.div>
-  );
-}
+import { ErrorCard } from "@/components/ui/ErrorCard";
 
 function Selector({ cargando }: { cargando: boolean }) {
   const input = useRef<HTMLInputElement>(null);
@@ -275,7 +254,7 @@ export function SubtitulosScreen() {
                   {!isPro && (
                     <p className="text-sm text-muted">
                       El plan gratis agrega la marca de agua &ldquo;hookly&rdquo;.{" "}
-                      <Link href="/precios" className="font-semibold text-accent">
+                      <Link href="/cuenta" className="font-semibold text-accent">
                         Quitarla con Pro
                       </Link>
                     </p>

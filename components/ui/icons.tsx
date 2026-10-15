@@ -162,3 +162,53 @@ export const IconRefresh = (p: P) => (
     <path d="M19.5 4.5v4h-4" />
   </Svg>
 );
+
+export const IconSummary = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 6h16" />
+    <path d="M4 12h10" />
+    <path d="M4 18h6" />
+    <path d="M17 15l3 3-3 3" />
+  </Svg>
+);
+
+export const IconBook = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15Z" />
+    <path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H20v3H6.5A2.5 2.5 0 0 1 4 20.5Z" />
+    <path d="M9 8h7" />
+  </Svg>
+);
+
+export const IconScissors = (p: P) => (
+  <Svg {...p}>
+    <circle cx="6" cy="6.5" r="2.5" />
+    <circle cx="6" cy="17.5" r="2.5" />
+    <path d="M8.2 7.8 20 18" />
+    <path d="M8.2 16.2 20 6" />
+  </Svg>
+);
+
+export const IconMic = (p: P) => (
+  <Svg {...p}>
+    <rect x="9" y="3" width="6" height="11" rx="3" />
+    <path d="M5.5 11a6.5 6.5 0 0 0 13 0" />
+    <path d="M12 17.5V21" />
+  </Svg>
+);
+
+export const IconUser = (p: P) => (
+  <Svg {...p}>
+    <circle cx="12" cy="8" r="4" />
+    <path d="M4.5 20a7.5 7.5 0 0 1 15 0" />
+  </Svg>
+);
+
+export const IconGift = (p: P) => (
+  <Svg {...p}>
+    <rect x="3.5" y="8" width="17" height="4" rx="1" />
+    <path d="M5 12v8h14v-8" />
+    <path d="M12 8v12" />
+    <path d="M12 8c-1.5-3-5-3.5-5-1.25C7 8 9 8 12 8Zm0 0c1.5-3 5-3.5 5-1.25C17 8 15 8 12 8Z" />
+  </Svg>
+);

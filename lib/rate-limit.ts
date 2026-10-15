@@ -1,5 +1,5 @@
-import { Redis } from "@upstash/redis";
 import type { Uso } from "@/lib/ai/schema";
+import { getRedis } from "@/lib/server/kv";
 
 /** Free generations of hooks per person per day (Mexico City calendar day). */
 export const LIMITE_HOOKS_DIA = 3;
@@ -12,21 +12,13 @@ export const LIMITE_GUIONES_DIA = 15;
 const FACTOR_IP = 10;
 
 export type Accion = "hooks" | "guion";
-export type Identidad = { uid: string; ip: string | null };
+export type { Identidad } from "@/lib/server/identidad";
+import type { Identidad } from "@/lib/server/identidad";
 
 const LIMITES: Record<Accion, number> = { hooks: LIMITE_HOOKS_DIA, guion: LIMITE_GUIONES_DIA };
 
 function hoyMX() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Mexico_City" }).format(new Date());
-}
-
-let redis: Redis | null | undefined;
-function getRedis() {
-  if (redis !== undefined) return redis;
-  const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
-  redis = url && token ? new Redis({ url, token }) : null;
-  return redis;
 }
 
 /*
@@ -70,8 +62,9 @@ export function limiteDesactivado() {
   return process.env.HOOKLY_SIN_LIMITE === "1";
 }
 
-export async function consultarUso(accion: Accion, who: Identidad): Promise<Uso & { bloqueado: boolean }> {
-  const limite = LIMITES[accion];
+/** `limite` overrides the free daily limit (paid plans pass their own). */
+export async function consultarUso(accion: Accion, who: Identidad, limiteHooks?: number): Promise<Uso & { bloqueado: boolean }> {
+  const limite = accion === "hooks" && limiteHooks ? limiteHooks : LIMITES[accion];
   if (limiteDesactivado()) return { usados: 0, limite, restantes: limite, bloqueado: false };
   const k = claves(accion, who);
   const [usados, porIp = 0] = await leer(k.ip ? [k.uid, k.ip] : [k.uid]);
@@ -79,12 +72,12 @@ export async function consultarUso(accion: Accion, who: Identidad): Promise<Uso 
   return { usados, limite, restantes: bloqueado ? 0 : Math.max(0, limite - usados), bloqueado };
 }
 
-export async function registrarUso(accion: Accion, who: Identidad): Promise<Uso> {
-  const limite = LIMITES[accion];
+export async function registrarUso(accion: Accion, who: Identidad, limiteHooks?: number): Promise<Uso> {
+  const limite = accion === "hooks" && limiteHooks ? limiteHooks : LIMITES[accion];
   if (limiteDesactivado()) return { usados: 0, limite, restantes: limite };
   const k = claves(accion, who);
   await sumar(k.ip ? [k.uid, k.ip] : [k.uid]);
-  return publico(await consultarUso(accion, who));
+  return publico(await consultarUso(accion, who, limiteHooks));
 }
 
 /** Strips internal fields before sending usage to the browser. */

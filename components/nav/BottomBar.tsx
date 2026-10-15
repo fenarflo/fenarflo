@@ -3,13 +3,14 @@
 import { motion } from "motion/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { IconCaptions, IconHook, IconPalette } from "@/components/ui/icons";
+import { IconCaptions, IconHook, IconSummary, IconUser } from "@/components/ui/icons";
 import { spring } from "@/lib/motion";
 
 const TABS = [
+  { href: "/resumir", label: "Resumir", Icon: IconSummary },
   { href: "/hooks", label: "Hooks", Icon: IconHook },
   { href: "/subtitulos", label: "Subtítulos", Icon: IconCaptions },
-  { href: "/mi-estilo", label: "Mi estilo", Icon: IconPalette },
+  { href: "/cuenta", label: "Cuenta", Icon: IconUser },
 ] as const;
 
 export function BottomBar() {
@@ -19,9 +20,9 @@ export function BottomBar() {
       aria-label="Secciones"
       className="material-bar fixed inset-x-0 bottom-0 z-40 pb-[var(--safe-bottom)]"
     >
-      <ul className="mx-auto grid h-[var(--bar-height)] max-w-lg grid-cols-3 px-2">
+      <ul className="mx-auto grid h-[var(--bar-height)] max-w-lg grid-cols-4 px-2">
         {TABS.map(({ href, label, Icon }) => {
-          const active = pathname?.startsWith(href);
+          const active = pathname?.startsWith(href) || (href === "/cuenta" && pathname?.startsWith("/mi-estilo"));
           return (
             <li key={href} className="flex">
               <Link

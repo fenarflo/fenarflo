@@ -14,7 +14,7 @@ import type {
 import { useEstilo } from "@/lib/estilo";
 import { useHistorial, type EntradaHistorial } from "@/lib/historial";
 import { spring } from "@/lib/motion";
-import { usePlan } from "@/lib/plan";
+import { usePlan } from "@/lib/cuenta";
 import { usePersistentState } from "@/lib/storage";
 import { PageHeader } from "@/components/nav/PageHeader";
 import { Button } from "@/components/ui/Button";
@@ -74,7 +74,7 @@ export function HooksScreen() {
       .catch(() => {});
   }, []);
 
-  const sinGeneraciones = !isPro && uso?.restantes === 0;
+  const sinGeneraciones = uso?.restantes === 0;
   const ideaLimpia = idea.trim();
 
   const generar = async () => {
@@ -226,7 +226,7 @@ export function HooksScreen() {
         {sinGeneraciones && (
           <p className="-mt-2 text-center text-sm text-muted">
             Usaste tus generaciones de hoy.{" "}
-            <Link href="/precios" className="font-semibold text-accent underline-offset-4 hover:underline">
+            <Link href="/cuenta" className="font-semibold text-accent underline-offset-4 hover:underline">
               Ver plan Pro
             </Link>
           </p>
@@ -247,7 +247,7 @@ export function HooksScreen() {
             <div>
               <p>{error.error}</p>
               {error.codigo === "limite" && (
-                <Link href="/precios" className="mt-1 inline-block font-semibold text-accent">
+                <Link href="/cuenta" className="mt-1 inline-block font-semibold text-accent">
                   Conoce el plan Pro
                 </Link>
               )}

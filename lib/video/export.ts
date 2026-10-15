@@ -7,8 +7,8 @@ import type { FFmpeg } from "@ffmpeg/ffmpeg";
  * so no special COOP/COEP headers are needed). Nothing leaves the device.
  */
 
-const CORE = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm";
-const VENDOR = "/vendor/ffmpeg/index.js";
+export const CORE = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm";
+export const VENDOR = "/vendor/ffmpeg/index.js";
 // NotoEmoji-Medium.ttf only keeps its format-12 cmap: wasm libass otherwise picks
 // the BMP-only table and every emoji renders as a box.
 const FUENTES = [
@@ -22,7 +22,7 @@ let instancia: Promise<FFmpeg> | null = null;
 let actual: FFmpeg | null = null;
 
 /** Downloads a file into a same-origin blob: URL (the worker can't import cross-origin). */
-async function blobURL(url: string, tipo: string, onProgreso?: (p: number) => void) {
+export async function blobURL(url: string, tipo: string, onProgreso?: (p: number) => void) {
   const res = await fetch(url);
   if (!res.ok || !res.body) throw new Error(`No se pudo descargar ${url}`);
   const total = Number(res.headers.get("content-length")) || 0;
