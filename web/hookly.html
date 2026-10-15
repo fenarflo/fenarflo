@@ -822,10 +822,10 @@ function aiW() {
     const d = e.data;
     if (d && d.id != null && aiPend.has(d.id)) {
       const p = aiPend.get(d.id); aiPend.delete(d.id);
-      d.type === "ok" ? p.res(d) : p.rej(new Error(d.mensaje || "error"));
+      if (d.type === "ok") p.res(d); else { const er = new Error(d.mensaje || "error"); er.paso = d.paso; p.rej(er); }
     } else onAvanceAI?.(d);
   };
-  aiWorker.onerror = () => { for (const p of aiPend.values()) p.rej(new Error("worker")); aiPend.clear(); aiWorker = null; };
+  aiWorker.onerror = (ev) => { const er = new Error("worker: " + (ev?.message || "se detuvo")); er.paso = "worker"; for (const p of aiPend.values()) p.rej(er); aiPend.clear(); aiWorker = null; };
   return aiWorker;
 }
 function aiCall(msg, transfer) {
@@ -841,6 +841,37 @@ async function decodificar16k(file) {
   const src = off.createBufferSource(); src.buffer = dec; src.connect(off.destination); src.start();
   return { audio: (await off.startRendering()).getChannelData(0), dur: dec.duration };
 }
+/*
+ * Fallback for files decodeAudioData can't open (some iPhone .mov): play the
+ * video silently and record its audio as it plays. Must be primed inside the tap.
+ */
+function prepararCaptura(url) {
+  try {
+    const v = document.createElement("video"); v.src = url; v.playsInline = true; v.preload = "auto";
+    v.style.cssText = "position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none"; document.body.appendChild(v);
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const src = ac.createMediaElementSource(v);
+    const proc = ac.createScriptProcessor(4096, 1, 1); const mute = ac.createGain(); mute.gain.value = 0;
+    src.connect(proc); proc.connect(mute); mute.connect(ac.destination); ac.resume?.();
+    const primed = v.play().then(() => v.pause()).catch(() => {});
+    return { v, ac, proc, primed, cerrar() { try { v.pause(); } catch {} v.remove(); ac.close?.().catch(() => {}); } };
+  } catch { return null; }
+}
+async function capturarAudio(cap, dur, onProg) {
+  const { v, ac, proc } = cap; await cap.primed;
+  const trozos = []; let n = 0;
+  proc.onaudioprocess = (ev) => { if (!v.paused) { const d = ev.inputBuffer.getChannelData(0); trozos.push(new Float32Array(d)); n += d.length; onProg?.(Math.min(1, v.currentTime / dur)); } };
+  v.currentTime = 0; await ac.resume?.();
+  await v.play();
+  await new Promise((r) => { v.onended = r; const t = setInterval(() => { if (v.ended || v.currentTime >= dur - 0.05) { clearInterval(t); r(); } }, 250); });
+  proc.onaudioprocess = null;
+  const sr = ac.sampleRate; const all = new Float32Array(n); let o = 0; for (const t of trozos) { all.set(t, o); o += t.length; }
+  const off = new OfflineAudioContext(1, Math.max(1, Math.ceil(all.length / sr * 16000)), 16000);
+  const b = off.createBuffer(1, all.length, sr); b.copyToChannel(all, 0);
+  const s2 = off.createBufferSource(); s2.buffer = b; s2.connect(off.destination); s2.start();
+  return (await off.startRendering()).getChannelData(0);
+}
+
 /* Voiced regions of a 16 kHz signal (for pasted text and voice-over word timing). */
 function vad(a, dur) {
   const win = 320; const n = Math.floor(a.length / win); const e = new Float32Array(n);
@@ -923,30 +954,65 @@ function resetSubs(keepText) {
 }
 
 /* ---------- Transcription ---------- */
-async function transcribirAuto() {
+async function transcribirAuto(cap) {
   const S = state.subs; const file = S.file; if (!file) return;
-  S.fase = "transcribiendo"; S.error = null; S.avance = { fase: "audio" }; renderSubs();
+  S.fase = "transcribiendo"; S.error = null; S.detalle = ""; S.avance = { fase: "audio" }; renderSubs();
+  let paso = "audio";
   try {
-    if (!S.audio16) { const d = await decodificar16k(file); S.audio16 = d.audio; }
+    if (!S.audio16) {
+      try { S.audio16 = (await decodificar16k(file)).audio; }
+      catch (e) {
+        if (!cap) throw e;
+        paso = "audio-directo";
+        S.avance = { fase: "escuchando", progreso: 0 }; pintarAvanceT();
+        S.audio16 = await capturarAudio(cap, S.info.dur, (p) => { S.avance = { fase: "escuchando", progreso: p }; pintarAvanceT(); });
+      }
+    }
+    cap?.cerrar(); cap = null;
     if (S.file !== file) return;
     onAvanceAI = (d) => {
       if (S.file !== file || S.fase !== "transcribiendo") return;
       if (d.type === "descarga" && d.grupo === "voz") S.avance = { fase: "descarga", progreso: d.progreso };
       else if (d.type === "transcribiendo") S.avance = { fase: "transcribiendo", progreso: d.progreso, palabras: d.palabras };
+      else return;
       pintarAvanceT();
     };
-    const copia = S.audio16.slice(0);
-    const r = await aiCall({ type: "transcribir", audio: copia }, [copia.buffer]);
+    // Phones get the light model first: a third of the download and memory.
+    const intentar = (modo) => { const copia = S.audio16.slice(0); return aiCall({ type: "transcribir", audio: copia, modo }, [copia.buffer]); };
+    let r;
+    paso = "ia";
+    try { r = await intentar(esMovil() ? "frase" : "palabra"); }
+    catch (e) {
+      if (String(e?.message) === "cancelado" || S.file !== file) throw e;
+      if (/No se pudo descargar|manifest/.test(String(e?.message))) throw e;
+      console.warn("Reintentando con el modelo ligero", e);
+      aiStop(); // fresh worker: a failed load can leave the runtime out of memory
+      r = await intentar("frase");
+    }
     if (S.file !== file) return;
-    if (!r.palabras.length) { S.fase = "listo"; S.modoTexto = true; S.error = "No escuchamos voz en este video. Puedes pegar lo que dices o crear el short solo con la imagen."; renderSubs(); return; }
-    S.palabras = r.palabras; S.fase = "editor"; S.avance = null; renderSubs();
+    if (!r.palabras.length) { S.fase = "listo"; S.modoTexto = true; S.error = "No escuchamos voz en este video. Puedes pegar lo que dices o seguir sin texto y crear el short solo con la imagen."; renderSubs(); return; }
+    S.palabras = validarTiempos(r.palabras, S.audio16, S.info.dur); S.fase = "editor"; S.avance = null; renderSubs();
   } catch (e) {
+    cap?.cerrar();
     if (S.file !== file || String(e?.message) === "cancelado") { if (S.file === file) { S.fase = "listo"; renderSubs(); } return; }
     console.error(e);
     S.fase = "listo"; S.modoTexto = true; S.avance = null;
-    S.error = "La transcripción automática no pudo arrancar en este dispositivo. Pega lo que dices en el video y lo sincronizamos con tu voz.";
+    const det = `${e?.paso || paso}: ${String(e?.message || e).slice(0, 160)}`;
+    S.error = /^audio/.test(paso) && !e?.paso
+      ? "No pudimos leer el audio de este video. Prueba exportarlo de nuevo desde Fotos o pega lo que dices y lo sincronizamos."
+      : /No se pudo descargar|manifest|Failed to fetch|Load failed|network/i.test(det)
+        ? "No se pudo descargar el modelo de voz. Revisa tu conexión (mejor con WiFi) e intenta de nuevo."
+        : "La transcripción automática no pudo correr en este dispositivo. Pega lo que dices en el video y lo sincronizamos con tu voz.";
+    S.detalle = det;
     renderSubs();
   }
+}
+/* Word timestamps can come back degenerate (every word at one instant); then re-time the text on the voiced regions. */
+function validarTiempos(p, audio, dur) {
+  if (!p.length) return p;
+  const starts = new Set(p.map((w) => Math.round(w.start * 5)));
+  const malos = p.some((w) => !(w.start >= 0) || w.start > dur + 0.5) || (p.length >= 4 && starts.size < p.length * 0.35);
+  return malos ? sincronizar(p.map((w) => w.text).join(" "), vad(audio, dur)) : p;
 }
 async function sincronizarTexto() {
   const S = state.subs; if (!S.file || !S.texto.trim()) return;
@@ -963,6 +1029,7 @@ function pintarAvanceT() {
   const lbl = $("#t-lbl"), det = $("#t-det"), last = $("#t-last");
   if (!box._prog) box._prog = makeProgress($("#t-fill"), $("#t-pct"));
   if (a.fase === "audio") { lbl.textContent = "Leyendo el audio…"; det.textContent = "Todo sucede en tu dispositivo."; box._prog.set(0.02); }
+  else if (a.fase === "escuchando") { lbl.textContent = "Escuchando el audio del video"; det.textContent = "Este video se lee reproduciéndolo; tarda lo que dura. No cambies de app."; box._prog.set(a.progreso * 0.15); }
   else if (a.fase === "descarga") { lbl.textContent = "Preparando la transcripción"; det.textContent = "Solo la primera vez se descarga el modelo de voz (unos 140 MB). Después queda guardado."; box._prog.set(a.progreso * 0.5); }
   else { lbl.textContent = "Transcribiendo"; det.textContent = "Escuchando cada palabra de tu video."; box._prog.set(0.5 + a.progreso * 0.5); last.textContent = a.palabras?.length ? "…" + a.palabras.slice(-14).map((p) => p.text).join(" ") : ""; last.hidden = !a.palabras?.length; }
 }
@@ -1120,7 +1187,7 @@ function renderSubs() {
   stopPreviewLoop();
   const paso = S.fase === "vacio" || S.fase === "validando" ? 0 : S.fase === "listo" || S.fase === "transcribiendo" ? 1 : S.fase === "editor" ? 2 : 3;
   let html = `<div class="screen">${header("Editor", "Sube tu video, pídele a la IA el short y expórtalo con subtítulos y voz.")}${pasos(paso)}`;
-  if (S.error) html += `<div class="alert" role="alert" style="margin-bottom:1rem">${I.alert}<p style="flex:1">${esc(S.error)}</p><button class="linkbtn" id="err-ok" style="min-height:auto">OK</button></div>`;
+  if (S.error) html += `<div class="alert" role="alert" style="margin-bottom:1rem">${I.alert}<div style="flex:1;min-width:0"><p>${esc(S.error)}</p>${S.detalle ? `<p class="t-cap" style="margin-top:.375rem;word-break:break-word">Detalle técnico: ${esc(S.detalle)}</p>` : ""}</div><button class="linkbtn" id="err-ok" style="min-height:auto">OK</button></div>`;
 
   if (S.fase === "vacio" || S.fase === "validando") {
     html += `<div class="drop" id="drop">
@@ -1134,7 +1201,7 @@ function renderSubs() {
     <div class="how"><div><b>1</b><span>La IA transcribe tu voz palabra por palabra.</span></div><div><b>2</b><span>Le dices qué quieres y arma el short con los mejores momentos.</span></div><div><b>3</b><span>Agregas voz en off y exportas en 9:16.</span></div></div>`;
   } else if (S.fase === "listo" || S.fase === "transcribiendo") {
     html += `<div class="card stack" style="gap:1.25rem">
-      <div class="row" style="align-items:flex-start;gap:1rem"><video class="thumbvid" src="${S.url}" muted playsinline preload="metadata"></video>
+      <div class="row" style="align-items:flex-start;gap:1rem"><video class="thumbvid" src="${S.url}#t=0.1" muted playsinline preload="metadata"></video>
         <div style="min-width:0;flex:1;padding-top:.25rem"><p style="margin:0;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(S.file.name)}</p><p class="t-cap" style="margin-top:.25rem">${fmtT(S.info.dur)} · ${mb(S.file.size)} MB</p>
         ${S.fase === "listo" ? `<button class="linkbtn" id="change" style="padding:0;margin-top:.5rem">Cambiar video</button>` : ""}</div></div>`;
     if (S.fase === "transcribiendo") {
@@ -1225,7 +1292,7 @@ function renderSubs() {
 
 function bindSubs() {
   const S = state.subs;
-  $("#err-ok")?.addEventListener("click", () => { S.error = null; renderSubs(); });
+  $("#err-ok")?.addEventListener("click", () => { S.error = null; S.detalle = ""; renderSubs(); });
   const file = $("#file"), drop = $("#drop");
   $("#pick")?.addEventListener("click", () => file.click());
   file?.addEventListener("change", () => { const f = file.files?.[0]; if (f) elegirVideo(f); file.value = ""; });
@@ -1235,7 +1302,7 @@ function bindSubs() {
     drop.addEventListener("drop", (ev) => { ev.preventDefault(); drop.classList.remove("over"); const f = ev.dataTransfer.files?.[0]; if (f) elegirVideo(f); });
   }
   $("#change")?.addEventListener("click", () => { resetSubs(true); renderSubs(); });
-  $("#auto")?.addEventListener("click", () => { S.modoTexto = false; transcribirAuto(); });
+  $("#auto")?.addEventListener("click", () => { S.modoTexto = false; transcribirAuto(S.audio16 ? null : prepararCaptura(S.url)); });
   $("#paste")?.addEventListener("click", () => { S.modoTexto = true; renderSubs(); });
   $("#sin-voz")?.addEventListener("click", () => { S.palabras = []; S.fase = "editor"; renderSubs(); });
   $("#t-cancel")?.addEventListener("click", () => { aiStop(); S.fase = "listo"; S.avance = null; renderSubs(); });

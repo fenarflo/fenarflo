@@ -16,6 +16,9 @@ const MODELOS = {
 };
 
 const post = (m, transfer) => self.postMessage(m, transfer || []);
+/* Which step is running, so a failure on a phone tells us where it broke. */
+let paso = "inicio";
+const etapa = (p) => { paso = p; post({ type: "paso", paso: p }); };
 let manifestP = null;
 const manifest = () => (manifestP ??= fetch(BASE + "manifest.json").then((r) => {
   if (!r.ok) throw new Error("manifest " + r.status);
@@ -95,6 +98,7 @@ const customCache = {
 let tfP = null;
 function cargarTF() {
   return (tfP ??= (async () => {
+    etapa("libreria");
     const tf = await import(TF);
     const { env } = tf;
     // Files we don't ship (optional configs) resolve to a same-origin 404, as they would online.
@@ -104,6 +108,7 @@ function cargarTF() {
     env.useBrowserCache = false;
     env.useCustomCache = true;
     env.customCache = customCache;
+    etapa("motor");
     const wasm = await leerArchivo("rt/ort.wasm");
     if (!wasm) throw new Error("runtime");
     env.backends.onnx.wasm.wasmBinary = await wasm.arrayBuffer();
@@ -115,23 +120,48 @@ function cargarTF() {
 }
 
 let asrP = null, ttsP = null;
+/*
+ * "palabra": fp32 encoder, exact word timestamps (needs more memory).
+ * "frase": quantized encoder (a third of the size) for phones that can't hold
+ * the full one; it only gives sentence timestamps, so words are spread inside each sentence.
+ */
+let modoASR = "palabra";
 function cargarASR() {
   return (asrP ??= (async () => {
-    await prepararProgreso("voz", ["whisper/", "rt/"]);
-    const tf = await cargarTF();
-    // Encoder stays fp32: a quantized encoder breaks word timestamps.
-    const asr = await tf.pipeline("automatic-speech-recognition", "onnx-community/whisper-base_timestamped", {
-      device: "wasm",
-      dtype: { encoder_model: "fp32", decoder_model_merged: "q8" },
-    });
-    progreso.grupo = null;
-    return asr;
+    const tf = await (async () => { await prepararProgreso("voz", ["whisper/onnx/encoder_model.onnx", "whisper/onnx/decoder", "whisper/t", "whisper/c", "whisper/g", "whisper/p", "rt/"]); return cargarTF(); })();
+    etapa("modelo");
+    try {
+      if (modoASR !== "palabra") throw new Error("ligero");
+      const asr = await tf.pipeline("automatic-speech-recognition", "onnx-community/whisper-base_timestamped", {
+        device: "wasm", dtype: { encoder_model: "fp32", decoder_model_merged: "q8" },
+      });
+      progreso.grupo = null;
+      return asr;
+    } catch (e) {
+      if (/No se pudo descargar|manifest/.test(String(e?.message))) throw e;
+      if (modoASR === "palabra") console.warn("Modelo completo no cabe; usando el ligero", e);
+      modoASR = "frase";
+      await prepararProgreso("voz", ["whisper/onnx/encoder_model_quantized", "whisper/onnx/decoder", "whisper/t", "whisper/c", "whisper/g", "whisper/p", "rt/"]);
+      etapa("modelo-ligero");
+      const asr = await tf.pipeline("automatic-speech-recognition", "onnx-community/whisper-base_timestamped", {
+        device: "wasm", dtype: { encoder_model: "q8", decoder_model_merged: "q8" },
+      });
+      progreso.grupo = null;
+      return asr;
+    }
   })().catch((e) => { asrP = null; progreso.grupo = null; throw e; }));
+}
+function repartir(texto, a, b) {
+  const ws = texto.split(/\s+/).filter(Boolean);
+  const tot = ws.reduce((n, w) => n + w.length + 1, 0) || 1;
+  let t = a;
+  return ws.map((w) => { const d = ((b - a) * (w.length + 1)) / tot; const p = { text: w, start: t, end: t + Math.max(0.05, d * 0.92) }; t += d; return p; });
 }
 function cargarTTS() {
   return (ttsP ??= (async () => {
     await prepararProgreso("narracion", ["tts/", "rt/"]);
     const tf = await cargarTF();
+    etapa("voz-modelo");
     const tts = await tf.pipeline("text-to-speech", "Xenova/mms-tts-spa", { device: "wasm", dtype: "q8" });
     progreso.grupo = null;
     return tts;
@@ -175,7 +205,17 @@ async function transcribir(audio) {
   for (let i = 0; i < segs.length; i++) {
     const [s, f] = segs[i];
     const off = s / SR;
-    const out = await asr(audio.subarray(s, f), { language: "spanish", task: "transcribe", return_timestamps: "word" });
+    etapa("transcribir");
+    const out = await asr(audio.subarray(s, f), { language: "spanish", task: "transcribe", return_timestamps: modoASR === "palabra" ? "word" : true });
+    if (modoASR === "frase") {
+      for (const c of out.chunks ?? []) {
+        const [a, b] = c.timestamp ?? [];
+        const ini = off + (a ?? 0), fin = off + (b ?? ((f - s) / SR));
+        palabras.push(...repartir((c.text ?? "").trim(), ini, Math.max(fin, ini + 0.3)));
+      }
+      post({ type: "transcribiendo", progreso: (i + 1) / segs.length, palabras: palabras.slice() });
+      continue;
+    }
     for (const c of out.chunks ?? []) {
       const text = (c.text ?? "").trim();
       if (!text) continue;
@@ -215,6 +255,7 @@ self.onmessage = async (ev) => {
   const { id, type } = ev.data || {};
   try {
     if (type === "transcribir") {
+      if (!asrP && ev.data.modo) modoASR = ev.data.modo;
       const palabras = await transcribir(ev.data.audio);
       post({ id, type: "ok", palabras });
     } else if (type === "hablar") {
@@ -222,6 +263,7 @@ self.onmessage = async (ev) => {
       post({ id, type: "ok", audio, sr }, [audio.buffer]);
     }
   } catch (e) {
-    post({ id, type: "error", mensaje: String(e?.message || e) });
+    post({ id, type: "error", paso, mensaje: String(e?.message || e).slice(0, 300) });
   }
 };
+self.addEventListener("unhandledrejection", (ev) => post({ type: "fallo", paso, mensaje: String(ev.reason?.message || ev.reason).slice(0, 300) }));
