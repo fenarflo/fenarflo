@@ -9,6 +9,12 @@ export function errorIA(error: unknown): { status: number; error: string; codigo
   if (error instanceof Anthropic.AuthenticationError) {
     return { status: 500, error: "La API key de Anthropic del servidor no es válida.", codigo: "config" };
   }
+  if (error instanceof Anthropic.APIError && /credit balance|billing/i.test(error.message)) {
+    return { status: 500, error: "La cuenta de Anthropic no tiene saldo: carga créditos en console.anthropic.com.", codigo: "config" };
+  }
+  if (error instanceof Anthropic.PermissionDeniedError) {
+    return { status: 500, error: "Anthropic bloqueó la llave: termina la verificación de identidad en console.anthropic.com.", codigo: "config" };
+  }
   if (error instanceof Anthropic.APIError) {
     console.error("Anthropic API error", error.status, error.message);
     return { status: 502, error: "El servicio de IA no respondió bien. Intenta de nuevo.", codigo: "ia" };

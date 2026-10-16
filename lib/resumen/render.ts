@@ -384,8 +384,10 @@ export class Motor {
     // Captions sit above the bottom area that TikTok/Reels cover with their own UI.
     const yCap = o.formato === "vertical" ? H * 0.7 : H * 0.88;
     const n = this.narrando(tl);
+    // With a voiced narrator only the narrator is heard and captioned; the original speech stays silent.
+    const soloNarrador = o.narrador === "voz" && this.linea.narr.length > 0;
     if (n) dibujarSubtitulo(ctx, W, H, base, tl, n.grupos, o.estilo, this.f.sub, yCap);
-    else dibujarSubtitulo(ctx, W, H, base, tl, this.linea.original, o.estilo, this.f.sub, yCap);
+    else if (!soloNarrador) dibujarSubtitulo(ctx, W, H, base, tl, this.linea.original, o.estilo, this.f.sub, yCap);
 
     // Text narrator (chosen, or a line whose voice failed), after the hook card.
     const desdeTarjeta = o.titulo ? 2.6 : 0;
@@ -415,7 +417,7 @@ export class Motor {
 
     if (this.gainV && this.ac) {
       // Duck the original under the narrator.
-      this.gainV.gain.setTargetAtTime(n ? 0.14 : 1, this.ac.currentTime, 0.08);
+      this.gainV.gain.setTargetAtTime(soloNarrador ? 0 : 1, this.ac.currentTime, 0.08);
     }
   }
 

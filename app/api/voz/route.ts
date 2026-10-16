@@ -28,6 +28,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (e) {
     await consumir(t, "voz", -b.texto.length);
+    if (e instanceof ErrorProveedor && e.status === 402) {
+      return fail(402, "La cuenta de OpenAI no tiene saldo: carga créditos en platform.openai.com → Billing.", "config");
+    }
     if (e instanceof ErrorProveedor && e.status === 429) return fail(503, "Mucha demanda en la voz. Reintentando…", "ia");
     console.error(e);
     return fail(502, "No se pudo generar la voz.", "ia");

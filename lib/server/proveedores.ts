@@ -109,6 +109,8 @@ export async function sintetizar(texto: string, voz: string, instrucciones: stri
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
     console.error("Voz", res.status, txt.slice(0, 300));
+    // OpenAI answers 429 "insufficient_quota" when the account has no credit.
+    if (/insufficient_quota|billing/i.test(txt)) throw new ErrorProveedor(402, "saldo");
     throw new ErrorProveedor(res.status, txt.slice(0, 200));
   }
   return res.arrayBuffer();

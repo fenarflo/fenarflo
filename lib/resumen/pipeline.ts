@@ -374,6 +374,7 @@ export async function generarVoces(
   if (!lineas.length) return piezas;
   let hechas = 0;
   let fallidas = 0;
+  let motivo = "";
   onAvance({ etapa: "voz", progreso: 0 });
   const audios = await enParalelo(
     lineas,
@@ -386,6 +387,7 @@ export async function generarVoces(
       } catch (e) {
         if ((e as Error)?.name === "AbortError") throw e;
         fallidas++;
+        if (e instanceof ErrorResumen && e.codigo === "config") motivo = e.message;
         return null;
       } finally {
         hechas++;
@@ -397,7 +399,7 @@ export async function generarVoces(
   if (fallidas) {
     avisos.push(
       fallidas === lineas.length
-        ? "No se pudo generar la voz; la narración aparece como texto."
+        ? `No se pudo generar la voz; la narración aparece como texto.${motivo ? " " + motivo : ""}`
         : "Algunas frases del narrador quedaron solo en texto.",
     );
   }
